@@ -23,14 +23,14 @@ class FinsService {
         resolve(false);
       }, 1000); // 1 detik timeout
 
-      // Kirim command FINS sederhana (Read D100 1 Word)
+      // Kirim command FINS sederhana (Read D0 1 Word)
       const command = Buffer.from([
         0x80, 0x00, 0x02,       // Header
         0x00, 0x00, 0x00,       // Dest
         0x00, 0x00, 0x00,       // Source
         0x00,                   // SID
         0x01, 0x01,             // Command Read
-        0x82, 0x00, 0x64, 0x00, // Address D100
+        0x82, 0x00, 0x00, 0x00, // Address D0
         0x00, 0x01              // Count 1
       ]);
 
@@ -61,15 +61,15 @@ class FinsService {
         reject(new Error('PLC Timeout'));
       }, 2000);
 
-      // FINS Command: Read 4 Words start from D100
+      // FINS Command: Read 2 Words start from D0
       const command = Buffer.from([
         0x80, 0x00, 0x02,
         0x00, 0x00, 0x00,
         0x00, 0x00, 0x00,
-        0x01,                   
+        0x01,
         0x01, 0x01,             // Read
-        0x82, 0x00, 0x64, 0x00, // D100
-        0x00, 0x04              // 4 Words
+        0x82, 0x00, 0x00, 0x00, // D0 (address 0x0000)
+        0x00, 0x02              // Count 2 words (D0, D1)
       ]);
 
       socket.send(command, 0, command.length, this.plcPort, this.plcIp, (err) => {
@@ -87,18 +87,14 @@ class FinsService {
         if (msg.length < 8) return;
 
         const dataOffset = msg.length - 8;
-        
+
         try {
-          const counterInput = msg.readUInt16BE(dataOffset);
-          const counterOutput = msg.readUInt16BE(dataOffset + 2);
-          const statusInput = msg.readUInt16BE(dataOffset + 4);
-          const statusOutput = msg.readUInt16BE(dataOffset + 6);
+          const counterA = msg.readUInt16BE(dataOffset);      // D0
+          const counterB = msg.readUInt16BE(dataOffset + 2);   // D1
 
           resolve({
-            counterInput,
-            counterOutput,
-            statusInput,
-            statusOutput,
+            counterA,
+            counterB,
             timestamp: new Date()
           });
         } catch (e) {

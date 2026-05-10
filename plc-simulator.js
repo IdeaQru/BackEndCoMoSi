@@ -15,12 +15,11 @@ const SIMULATOR_PORT = 9600;
 const UPDATE_INTERVAL_MS = 500;
 
 // ===== Simulated DM memory (word-based) =====
-const DM_BASE = 0x0000; // DM D00000 => address 0x0000
 let memory = {
-  D100: 150,
-  D101: 140,
-  D102: 0,
-  D103: 0,
+  D0: 150,   // Counter output #1 (untuk frontend)
+  D1: 140,   // Counter output #2 (untuk frontend)
+  D200: 0,   // Kosong
+  D201: 0,   // Kosong
 };
 
 // Internal update loop (2 Hz)
@@ -44,19 +43,19 @@ function writeUInt16BE(buf, offset, value) {
 
 function dmReadWord(wordAddr) {
   // wordAddr is DM word address (0 = D00000)
-  // We only map D100..D103 for now
-  if (wordAddr === 0x0064) return memory.D100; // 100
-  if (wordAddr === 0x0065) return memory.D101; // 101
-  if (wordAddr === 0x0066) return memory.D102; // 102
-  if (wordAddr === 0x0067) return memory.D103; // 103
+  // D0 = 0x0000, D1 = 0x0001, D200 = 0x00C8, D201 = 0x00C9
+  if (wordAddr === 0x0000) return memory.D0;    // D0 (counter output #1)
+  if (wordAddr === 0x0001) return memory.D1;    // D1 (counter output #2)
+  if (wordAddr === 0x00C8) return memory.D200;  // D200 (kosong)
+  if (wordAddr === 0x00C9) return memory.D201;  // D201 (kosong)
   return 0;
 }
 
 function dmWriteWord(wordAddr, value) {
-  if (wordAddr === 0x0064) memory.D100 = value;
-  if (wordAddr === 0x0065) memory.D101 = value;
-  if (wordAddr === 0x0066) memory.D102 = value;
-  if (wordAddr === 0x0067) memory.D103 = value;
+  if (wordAddr === 0x0000) memory.D0 = value;
+  if (wordAddr === 0x0001) memory.D1 = value;
+  if (wordAddr === 0x00C8) memory.D200 = value;
+  if (wordAddr === 0x00C9) memory.D201 = value;
 }
 
 function buildFinsResponseHeader(req) {
@@ -143,7 +142,7 @@ server.on('message', (msg, rinfo) => {
       server.send(response, rinfo.port, rinfo.address, (err) => {
         if (!err) {
           process.stdout.write(
-            `\r📤 0101 -> ${rinfo.address}:${rinfo.port} | D100=${memory.D100} D101=${memory.D101} D102=${memory.D102} D103=${memory.D103}     `
+            `\r📤 0101 -> ${rinfo.address}:${rinfo.port} | D0=${memory.D0} D1=${memory.D1} D200=${memory.D200} D201=${memory.D201}     `
           );
         }
       });
