@@ -10,98 +10,106 @@ class FinsService {
     this.lastError = null;
   }
 
-  /**
-   * 1. Method wajib untuk PlcIntegration: testConnection
-   * Melakukan tes koneksi nyata ke simulator
-   */
-  async testConnection() {
-    return new Promise((resolve) => {
-      const socket = dgram.createSocket('udp4');
-      const timeout = setTimeout(() => {
-        socket.close();
-        this.isConnected = false;
-        resolve(false);
-      }, 1000); // 1 detik timeout
-
-      // Kirim command FINS sederhana (Read D0 1 Word)
-      const command = Buffer.from([
-        0x80, 0x00, 0x02,       // Header
-        0x00, 0x00, 0x00,       // Dest
-        0x00, 0x00, 0x00,       // Source
-        0x00,                   // SID
-        0x01, 0x01,             // Command Read
-        0x82, 0x00, 0x00, 0x00, // Address D0
-        0x00, 0x01              // Count 1
-      ]);
-
-      socket.send(command, 0, command.length, this.plcPort, this.plcIp, (err) => {
-        if (err) { /* ignore send error, rely on timeout */ }
-      });
-
-      socket.on('message', () => {
-        clearTimeout(timeout);
-        socket.close();
-        this.isConnected = true;
-        this.lastUpdate = new Date();
-        resolve(true); // KONEKSI OK
-      });
-    });
-  }
-
-  /**
-   * 2. Method Baca Data Sensor (Asli dari Simulator)
-   */
-  async readSensorData() {
+  _sendFins(command) {
     return new Promise((resolve, reject) => {
       const socket = dgram.createSocket('udp4');
-      
+
       const timeout = setTimeout(() => {
         socket.close();
-        this.isConnected = false;
         reject(new Error('PLC Timeout'));
       }, 2000);
-
-      // FINS Command: Read 2 Words start from D0
-      const command = Buffer.from([
-        0x80, 0x00, 0x02,
-        0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00,
-        0x01,
-        0x01, 0x01,             // Read
-        0x82, 0x00, 0x00, 0x00, // D0 (address 0x0000)
-        0x00, 0x02              // Count 2 words (D0, D1)
-      ]);
-
-      socket.send(command, 0, command.length, this.plcPort, this.plcIp, (err) => {
-        if (err) reject(err);
-      });
 
       socket.on('message', (msg) => {
         clearTimeout(timeout);
         socket.close();
-        this.isConnected = true;
+        resolve(msg);
+      });
 
-        // Parsing Data dari Simulator
-        // Kita ambil 8 byte terakhir (karena kita minta 2 words = 4 bytes, tapi response overhead)
-        // Simulator mengirim Header + Data
-        if (msg.length < 8) return;
+      socket.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
 
-        const dataOffset = msg.length - 8;
-
-        try {
-          const counterInput = msg.readUInt16BE(dataOffset);    // D0
-          const counterOutput = msg.readUInt16BE(dataOffset + 2); // D1
-
-          resolve({
-            counterInput: counterInput,   // D0 - encoder counting input
-            counterOutput: counterOutput, // D1 - encoder counting output
-            timestamp: new Date()
-          });
-        } catch (e) {
-          reject(e);
+      socket.send(command, 0, command.length, this.plcPort, this.plcIp, (err) => {
+        if (err) {
+          clearTimeout(timeout);
+          reject(err);
         }
       });
     });
+  }
+
+  async _readWord(area, address) {
+    const command = Buffer.from([
+      0x80, 0x00, 0x02,
+      0x00, 0x01, 0x00,
+      0x00, 0x64, 0x00,
+      0x01,
+      0x01, 0x01,
+      area,
+      (address >> 8) & 0xFF,
+      address & 0xFF,
+      0x00,
+      0x00, 0x01           // count = 1 word
+    ]);
+
+    const msg = await this._sendFins(command);
+
+    if (msg.length < 14) throw new Error(`Response terlalu pendek: ${msg.length}`);
+
+    const endCode = msg.readUInt16BE(12);
+    if (endCode !== 0x0000) throw new Error(`FINS Error 0x${endCode.toString(16).padStart(4, '0')}`);
+
+    const payload = msg.slice(14);
+
+    if (payload.length === 0) throw new Error('Tidak ada data payload');
+    if (payload.length === 1) return payload.readUInt8(0);
+    return payload.readUInt16BE(0);
+  }
+
+  async testConnection() {
+    try {
+      await this._readWord(0x82, 5); // DM5 = counterInput
+      this.isConnected = true;
+      this.lastUpdate = new Date();
+      return true;
+    } catch (err) {
+      this.isConnected = false;
+      this.lastError = err.message;
+      logger.warn(`testConnection failed: ${err.message}`);
+      return false;
+    }
+  }
+
+  async readSensorData() {
+    try {
+      // D5/D6 = counter values (Total Input/Output)
+      const counterInput  = await this._readWord(0x82, 5);  // DM5
+      const counterOutput = await this._readWord(0x82, 6);  // DM6
+
+      // D200/D201 = RPM values (RPM Motor Conveyor/Rotator)
+      const rpmInput  = await this._readWord(0x82, 200); // DM200
+      const rpmOutput = await this._readWord(0x82, 201); // DM201
+
+      this.isConnected = true;
+      this.lastUpdate = new Date();
+
+      logger.info(`D5=${counterInput}, D6=${counterOutput}, D200=${rpmInput}, D201=${rpmOutput}`);
+
+      return {
+        counterInput,
+        counterOutput,
+        rpmInput,
+        rpmOutput,
+        timestamp: this.lastUpdate
+      };
+
+    } catch (err) {
+      this.isConnected = false;
+      this.lastError = err.message;
+      logger.error('readSensorData error:', err.message);
+      throw err;
+    }
   }
 
   getStatus() {
@@ -110,7 +118,8 @@ class FinsService {
       plcIp: this.plcIp,
       plcPort: this.plcPort,
       lastUpdate: this.lastUpdate,
-      mode: 'UDP_REALTIME' // Mode asli
+      lastError: this.lastError,
+      mode: 'UDP_REALTIME'
     };
   }
 

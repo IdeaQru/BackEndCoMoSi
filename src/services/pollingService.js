@@ -105,8 +105,10 @@ class PollingService {
       // -------------------------------------------------------------
       if (this.io) {
         const formatted = {
-          counterInput: sensorData.counterInput,
-          counterOutput: sensorData.counterOutput,
+          counterInput: sensorData.counterInput,   // D5 - Total counts
+          counterOutput: sensorData.counterOutput, // D6 - Total counts
+          rpmInput: sensorData.rpmInput,           // D200 - RPM Motor Conveyor
+          rpmOutput: sensorData.rpmOutput,         // D201 - RPM Motor Rotator
           statusInput: statusInput === 1,
           statusOutput: statusOutput === 1,
           objectsInSystem: Math.max(0, sensorData.counterInput - sensorData.counterOutput),
