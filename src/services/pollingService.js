@@ -17,7 +17,12 @@ class PollingService {
     this.lastSavedState = {
       counterInput: null,
       counterOutput: null
-      // Kita tidak perlu track statusInput/Output untuk logic save DB
+    };
+
+    // Track previous counter untuk detect perubahan (untuk status)
+    this.prevCounters = {
+      counterInput: null,
+      counterOutput: null
     };
   }
 
@@ -60,21 +65,30 @@ class PollingService {
       this.pollCount++;
 
       // -------------------------------------------------------------
+      // DETECT PERUBAHAN: Status based on counter changes
+      // -------------------------------------------------------------
+      const statusInput = (this.prevCounters.counterInput !== null && sensorData.counterInput !== this.prevCounters.counterInput) ? 1 : 0;
+      const statusOutput = (this.prevCounters.counterOutput !== null && sensorData.counterOutput !== this.prevCounters.counterOutput) ? 1 : 0;
+
+      // Update prev counters for next comparison
+      this.prevCounters = {
+        counterInput: sensorData.counterInput,
+        counterOutput: sensorData.counterOutput
+      };
+
+      // -------------------------------------------------------------
       // LOGIC DATABASE: Hanya simpan jika ANGKA Counter bertambah/berubah
       // -------------------------------------------------------------
-      const hasChanged = 
+      const hasChanged =
         sensorData.counterInput !== this.lastSavedState.counterInput ||
         sensorData.counterOutput !== this.lastSavedState.counterOutput;
-      
-      // CATATAN: statusInput (0/1) sengaja diabaikan di sini agar tidak memicu
-      // insert database saat sensor hanya berkedip tapi barang belum lewat.
 
       if (hasChanged) {
         await dataService.logSensorData({
           counterInput: sensorData.counterInput,
           counterOutput: sensorData.counterOutput,
-          statusInput: sensorData.statusInput,
-          statusOutput: sensorData.statusOutput,
+          statusInput: statusInput,
+          statusOutput: statusOutput,
           timestamp: sensorData.timestamp
         });
 
@@ -83,8 +97,6 @@ class PollingService {
           counterInput: sensorData.counterInput,
           counterOutput: sensorData.counterOutput
         };
-
-        // logger.debug(`💾 DB Saved: In ${sensorData.counterInput} / Out ${sensorData.counterOutput}`);
       }
 
 
@@ -95,8 +107,8 @@ class PollingService {
         const formatted = {
           counterInput: sensorData.counterInput,
           counterOutput: sensorData.counterOutput,
-          statusInput: sensorData.statusInput === 1,
-          statusOutput: sensorData.statusOutput === 1,
+          statusInput: statusInput === 1,
+          statusOutput: statusOutput === 1,
           objectsInSystem: Math.max(0, sensorData.counterInput - sensorData.counterOutput),
           timestamp: sensorData.timestamp,
           pollDuration: `${pollDuration}ms`,

@@ -82,19 +82,19 @@ class FinsService {
         this.isConnected = true;
 
         // Parsing Data dari Simulator
-        // Kita ambil 8 byte terakhir (karena kita minta 4 words = 8 bytes)
+        // Kita ambil 8 byte terakhir (karena kita minta 2 words = 4 bytes, tapi response overhead)
         // Simulator mengirim Header + Data
         if (msg.length < 8) return;
 
         const dataOffset = msg.length - 8;
 
         try {
-          const counterA = msg.readUInt16BE(dataOffset);      // D0
-          const counterB = msg.readUInt16BE(dataOffset + 2);   // D1
+          const counterInput = msg.readUInt16BE(dataOffset);    // D0
+          const counterOutput = msg.readUInt16BE(dataOffset + 2); // D1
 
           resolve({
-            counterA,
-            counterB,
+            counterInput: counterInput,   // D0 - encoder counting input
+            counterOutput: counterOutput, // D1 - encoder counting output
             timestamp: new Date()
           });
         } catch (e) {
